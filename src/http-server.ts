@@ -169,8 +169,10 @@ function errorResult(message: string) {
 }
 
 function registerTools(server: Server, db: Database): void {
+  // eslint-disable-next-line @typescript-eslint/require-await
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const { name, arguments: args = {} } = request.params;
 
@@ -253,31 +255,33 @@ async function handleMCPRequest(req: IncomingMessage, res: ServerResponse): Prom
   }
 }
 
-const httpServer = createServer(async (req, res) => {
-  const url = new URL(req.url || '/', `http://localhost:${PORT}`);
+const httpServer = createServer((req, res) => {
+  void (async () => {
+    const url = new URL(req.url || '/', `http://localhost:${PORT}`);
 
-  if (url.pathname === '/health' && req.method === 'GET') {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'healthy', server: SERVER_NAME, version: SERVER_VERSION }));
-    return;
-  }
-
-  if (url.pathname === '/mcp' || url.pathname === '/') {
-    try {
-      await handleMCPRequest(req, res);
-    } catch (err) {
-      if (!res.headersSent) {
-        res.writeHead(500, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Internal server error' }));
-      }
+    if (url.pathname === '/health' && req.method === 'GET') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ status: 'healthy', server: SERVER_NAME, version: SERVER_VERSION }));
+      return;
     }
-    return;
-  }
 
-  res.writeHead(404, { 'Content-Type': 'application/json' });
-  res.end(JSON.stringify({ error: 'Not found' }));
+    if (url.pathname === '/mcp' || url.pathname === '/') {
+      try {
+        await handleMCPRequest(req, res);
+      } catch (err) {
+        if (!res.headersSent) {
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: err instanceof Error ? err.message : 'Internal server error' }));
+        }
+      }
+      return;
+    }
+
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Not found' }));
+  })();
 });
 
 httpServer.listen(PORT, () => {
-  console.log(`${SERVER_NAME} v${SERVER_VERSION} listening on port ${PORT}`);
+  process.stdout.write(`${SERVER_NAME} v${SERVER_VERSION} listening on port ${PORT}\n`);
 });

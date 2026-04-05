@@ -174,8 +174,10 @@ const server = new Server(
   { capabilities: { tools: {} } }
 );
 
+// eslint-disable-next-line @typescript-eslint/require-await
 server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
 
+// eslint-disable-next-line @typescript-eslint/require-await
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   const { name, arguments: args = {} } = request.params;
 
@@ -214,7 +216,8 @@ async function main(): Promise<void> {
   await server.connect(transport);
 }
 
-main().catch((err) => {
-  process.stderr.write(`Fatal error: ${err.message}\n`);
+main().catch((err: unknown) => {
+  const message = err instanceof Error ? err.message : String(err);
+  process.stderr.write(`Fatal error: ${message}\n`);
   process.exit(1);
 });

@@ -25,7 +25,15 @@
     "freshness:check": "tsx scripts/check-freshness.ts",
     "coverage:update": "tsx scripts/update-coverage.ts"
   },
-  "keywords": ["mcp", "agriculture", "farm-planning", "sak", "betriebsuebergabe", "deckungsbeitrag", "switzerland"],
+  "keywords": [
+    "mcp",
+    "agriculture",
+    "farm-planning",
+    "sak",
+    "betriebsuebergabe",
+    "deckungsbeitrag",
+    "switzerland"
+  ],
   "author": "Ansvar Systems <info@ansvar.eu>",
   "license": "Apache-2.0",
   "repository": {
@@ -42,6 +50,7 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.4",
     "@types/better-sqlite3": "^7.6.0",
     "@types/node": "^20.0.0",
     "@typescript-eslint/eslint-plugin": "^8.0.0",
@@ -49,6 +58,7 @@
     "eslint": "^9.0.0",
     "tsx": "^4.0.0",
     "typescript": "^5.5.0",
+    "typescript-eslint": "^8.58.0",
     "vitest": "^2.0.0"
   }
 }
