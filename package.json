@@ -38,7 +38,7 @@
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ansvar-systems/ch-farm-planning-mcp"
+    "url": "https://github.com/Ansvar-Systems/ch-farm-planning-mcp"
   },
   "homepage": "https://ansvar.eu/open-agriculture",
   "engines": {
