@@ -1,18 +1,18 @@
 /**
- * Switzerland Crop Nutrients MCP — Data Ingestion Script
+ * Switzerland Farm Planning MCP — Data Ingestion Script
  *
- * Populates the database with Swiss crop nutrient data from:
- * - GRUD 2017 (Agroscope) — Duengungsnormen, Naehrstoffbedarf pro Kultur
- * - Suisse-Bilanz Wegleitung (BLW) — Betriebsbilanz, Korrekturfaktoren
- * - AGRIDEA — Duengungsplanung, kantonale Empfehlungen
- * - SBV / BLW — Produzentenpreise, Marktbeobachtung
- * - GRUD Kapitel 10 — Naehrstoffgehalte Hofduenger
+ * Populates the database with Swiss farm business planning data from:
+ * - Agroscope ZA-BH — Deckungsbeitraege, Referenzbetriebe
+ * - BLW — SAK-Faktoren (DZV Anhang), Agrarbericht
+ * - BGBB (SR 211.412.11) — Ertragswert, Zuweisungsanspruch, Betriebsuebergabe
+ * - AGRIDEA — Betriebsplanung, Arbeitswirtschaft, Rechtsformen
+ * - SBV — AHV/IV, Familienzulagen Landwirtschaft, Lohnrichtlinien
  *
  * Usage: npm run ingest
  */
 
 import { createDatabase } from '../src/db.js';
-import { mkdirSync, writeFileSync } from 'fs';
+import { mkdirSync } from 'fs';
 
 mkdirSync('data', { recursive: true });
 const db = createDatabase('data/database.db');
@@ -20,542 +20,633 @@ const db = createDatabase('data/database.db');
 const now = new Date().toISOString().split('T')[0];
 
 // ---------------------------------------------------------------------------
-// 1. Crops — Swiss arable, forage, root crops, permanent grassland
-//    Sources: GRUD 2017 (Agroscope), DZV Anhang, AGRIDEA Deckungsbeitraege
+// 1. SAK-Faktoren (Standardarbeitskraft) — DZV Anhang
+//    Schwellenwert: 1.0 SAK = landwirtschaftliches Gewerbe (BGBB Art. 5)
 // ---------------------------------------------------------------------------
 
-interface Crop {
-  id: string;
-  name: string;
-  crop_group: string;
-  typical_yield_t_ha: number;
-  nutrient_offtake_n: number;
-  nutrient_offtake_p2o5: number;
-  nutrient_offtake_k2o: number;
-  growth_stages: string[];
-  altitude_zone: string;
+interface SakFactor {
+  enterprise_type: string;
+  factor_per_unit: number;
+  unit: string;
+  notes: string;
 }
 
-const crops: Crop[] = [
-  // --- Getreide (Talzone) ---
-  {
-    id: 'winterweizen',
-    name: 'Winterweizen',
-    crop_group: 'getreide',
-    typical_yield_t_ha: 6.5,
-    nutrient_offtake_n: 130,
-    nutrient_offtake_p2o5: 52,
-    nutrient_offtake_k2o: 39,
-    growth_stages: ['Bestockung', 'Schossen', 'Aehrenschieben', 'Bluete', 'Kornfuellung', 'Reife'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'sommerweizen',
-    name: 'Sommerweizen',
-    crop_group: 'getreide',
-    typical_yield_t_ha: 5.5,
-    nutrient_offtake_n: 110,
-    nutrient_offtake_p2o5: 44,
-    nutrient_offtake_k2o: 33,
-    growth_stages: ['Bestockung', 'Schossen', 'Aehrenschieben', 'Bluete', 'Kornfuellung', 'Reife'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'wintergerste',
-    name: 'Wintergerste',
-    crop_group: 'getreide',
-    typical_yield_t_ha: 6.0,
-    nutrient_offtake_n: 108,
-    nutrient_offtake_p2o5: 48,
-    nutrient_offtake_k2o: 42,
-    growth_stages: ['Bestockung', 'Schossen', 'Aehrenschieben', 'Kornfuellung', 'Reife'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'sommergerste',
-    name: 'Sommergerste',
-    crop_group: 'getreide',
-    typical_yield_t_ha: 5.0,
-    nutrient_offtake_n: 85,
-    nutrient_offtake_p2o5: 40,
-    nutrient_offtake_k2o: 35,
-    growth_stages: ['Bestockung', 'Schossen', 'Aehrenschieben', 'Kornfuellung', 'Reife'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'winterraps',
-    name: 'Winterraps',
-    crop_group: 'oelsaaten',
-    typical_yield_t_ha: 3.5,
-    nutrient_offtake_n: 140,
-    nutrient_offtake_p2o5: 56,
-    nutrient_offtake_k2o: 49,
-    growth_stages: ['Rosette', 'Streckung', 'Knospe', 'Bluete', 'Schote', 'Reife'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'sonnenblumen',
-    name: 'Sonnenblumen',
-    crop_group: 'oelsaaten',
-    typical_yield_t_ha: 3.0,
-    nutrient_offtake_n: 105,
-    nutrient_offtake_p2o5: 42,
-    nutrient_offtake_k2o: 105,
-    growth_stages: ['Auflaufen', 'Rosette', 'Stengel', 'Knospe', 'Bluete', 'Kornfuellung', 'Reife'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'koernermais',
-    name: 'Koernermais',
-    crop_group: 'getreide',
-    typical_yield_t_ha: 10.0,
-    nutrient_offtake_n: 140,
-    nutrient_offtake_p2o5: 65,
-    nutrient_offtake_k2o: 50,
-    growth_stages: ['Auflaufen', '4-6 Blatt', 'Schossen', 'Fahnenschieben', 'Bluete', 'Kornfuellung', 'Reife'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'silomais',
-    name: 'Silomais',
-    crop_group: 'futterbau',
-    typical_yield_t_ha: 17.0,
-    nutrient_offtake_n: 170,
-    nutrient_offtake_p2o5: 68,
-    nutrient_offtake_k2o: 204,
-    growth_stages: ['Auflaufen', '4-6 Blatt', 'Schossen', 'Fahnenschieben', 'Bluete', 'Teigreife'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'kartoffeln',
-    name: 'Kartoffeln',
-    crop_group: 'hackfruechte',
-    typical_yield_t_ha: 40.0,
-    nutrient_offtake_n: 160,
-    nutrient_offtake_p2o5: 32,
-    nutrient_offtake_k2o: 200,
-    growth_stages: ['Auflaufen', 'Stauden', 'Bluete', 'Krautabsterben', 'Ernte'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'zuckerrueben',
-    name: 'Zuckerrueben',
-    crop_group: 'hackfruechte',
-    typical_yield_t_ha: 75.0,
-    nutrient_offtake_n: 150,
-    nutrient_offtake_p2o5: 53,
-    nutrient_offtake_k2o: 225,
-    growth_stages: ['Auflaufen', '4-Blatt', 'Reihenschluss', 'Wachstum', 'Zuckereinlagerung', 'Ernte'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'kunstwiese-3j',
-    name: 'Kunstwiese 3-jaehrig',
-    crop_group: 'futterbau',
-    typical_yield_t_ha: 12.0,
-    nutrient_offtake_n: 240,
-    nutrient_offtake_p2o5: 72,
-    nutrient_offtake_k2o: 264,
-    growth_stages: ['1. Schnitt', '2. Schnitt', '3. Schnitt', '4. Schnitt'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'naturwiese-intensiv',
-    name: 'Naturwiese intensiv',
-    crop_group: 'futterbau',
-    typical_yield_t_ha: 10.0,
-    nutrient_offtake_n: 180,
-    nutrient_offtake_p2o5: 60,
-    nutrient_offtake_k2o: 220,
-    growth_stages: ['1. Schnitt', '2. Schnitt', '3. Schnitt', '4. Schnitt'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'naturwiese-mittelintensiv',
-    name: 'Naturwiese mittelintensiv',
-    crop_group: 'futterbau',
-    typical_yield_t_ha: 7.5,
-    nutrient_offtake_n: 120,
-    nutrient_offtake_p2o5: 45,
-    nutrient_offtake_k2o: 165,
-    growth_stages: ['1. Schnitt', '2. Schnitt', '3. Schnitt'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'naturwiese-extensiv',
-    name: 'Naturwiese extensiv (BFF)',
-    crop_group: 'futterbau',
-    typical_yield_t_ha: 4.0,
-    nutrient_offtake_n: 0,
-    nutrient_offtake_p2o5: 0,
-    nutrient_offtake_k2o: 0,
-    growth_stages: ['1. Schnitt (ab 15.6.)', '2. Schnitt'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'dinkel',
-    name: 'Dinkel',
-    crop_group: 'getreide',
-    typical_yield_t_ha: 4.5,
-    nutrient_offtake_n: 100,
-    nutrient_offtake_p2o5: 41,
-    nutrient_offtake_k2o: 32,
-    growth_stages: ['Bestockung', 'Schossen', 'Aehrenschieben', 'Bluete', 'Kornfuellung', 'Reife'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'triticale',
-    name: 'Triticale',
-    crop_group: 'getreide',
-    typical_yield_t_ha: 6.0,
-    nutrient_offtake_n: 108,
-    nutrient_offtake_p2o5: 48,
-    nutrient_offtake_k2o: 42,
-    growth_stages: ['Bestockung', 'Schossen', 'Aehrenschieben', 'Kornfuellung', 'Reife'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'koernereiweisserbsen',
-    name: 'Eiweisserbsen',
-    crop_group: 'koernerleguminosen',
-    typical_yield_t_ha: 3.5,
-    nutrient_offtake_n: 0,
-    nutrient_offtake_p2o5: 35,
-    nutrient_offtake_k2o: 42,
-    growth_stages: ['Auflaufen', 'Verzweigung', 'Bluete', 'Huelsenfuellung', 'Reife'],
-    altitude_zone: 'talzone',
-  },
-  {
-    id: 'sojabohnen',
-    name: 'Sojabohnen',
-    crop_group: 'koernerleguminosen',
-    typical_yield_t_ha: 3.0,
-    nutrient_offtake_n: 0,
-    nutrient_offtake_p2o5: 42,
-    nutrient_offtake_k2o: 48,
-    growth_stages: ['Auflaufen', 'Verzweigung', 'Bluete', 'Huelsenfuellung', 'Reife'],
-    altitude_zone: 'talzone',
-  },
+const sakFactors: SakFactor[] = [
+  // Pflanzenbau
+  { enterprise_type: 'Winterweizen', factor_per_unit: 0.022, unit: 'ha', notes: 'Talzone, konventionell' },
+  { enterprise_type: 'Sommerweizen', factor_per_unit: 0.022, unit: 'ha', notes: 'Talzone, konventionell' },
+  { enterprise_type: 'Wintergerste', factor_per_unit: 0.020, unit: 'ha', notes: 'Talzone' },
+  { enterprise_type: 'Winterraps', factor_per_unit: 0.025, unit: 'ha', notes: 'Talzone' },
+  { enterprise_type: 'Silomais', factor_per_unit: 0.024, unit: 'ha', notes: 'Talzone' },
+  { enterprise_type: 'Koernermais', factor_per_unit: 0.025, unit: 'ha', notes: 'Talzone' },
+  { enterprise_type: 'Kartoffeln', factor_per_unit: 0.060, unit: 'ha', notes: 'Talzone, erhoehter Arbeitsbedarf (Pflanzung, Pflege, Ernte)' },
+  { enterprise_type: 'Zuckerrueben', factor_per_unit: 0.045, unit: 'ha', notes: 'Talzone' },
+  { enterprise_type: 'Kunstwiese', factor_per_unit: 0.015, unit: 'ha', notes: '3-jaehrig, Talzone' },
+  { enterprise_type: 'Naturwiese intensiv', factor_per_unit: 0.012, unit: 'ha', notes: 'Talzone, 3-4 Schnitte' },
+  { enterprise_type: 'Naturwiese extensiv', factor_per_unit: 0.007, unit: 'ha', notes: 'Talzone, 1-2 Schnitte' },
+  { enterprise_type: 'Dauergruenland', factor_per_unit: 0.010, unit: 'ha', notes: 'Durchschnitt Talzone' },
+  { enterprise_type: 'Obst Hochstamm', factor_per_unit: 0.050, unit: 'ha', notes: 'Streuobst, extensiv' },
+  { enterprise_type: 'Obst Niederstamm', factor_per_unit: 0.120, unit: 'ha', notes: 'Intensivobstanlage' },
+  { enterprise_type: 'Reben', factor_per_unit: 0.200, unit: 'ha', notes: 'Rebbau, hoher Handarbeitsanteil' },
+  { enterprise_type: 'Freilandgemuese', factor_per_unit: 0.150, unit: 'ha', notes: 'Durchschnitt verschiedene Kulturen' },
+  { enterprise_type: 'Gewaechshausgemuese', factor_per_unit: 0.350, unit: 'ha', notes: 'Beheiztes Gewaechshaus' },
+  // Tierhaltung
+  { enterprise_type: 'Milchkuh', factor_per_unit: 0.040, unit: 'Kuh', notes: 'Laufstall, mit Aufzucht. Inkl. Futterbau anteilig' },
+  { enterprise_type: 'Mutterkuh', factor_per_unit: 0.030, unit: 'Kuh', notes: 'Extensiv, mit Kalb' },
+  { enterprise_type: 'Aufzuchtrind', factor_per_unit: 0.015, unit: 'Tier', notes: 'Jungtier 1-2 Jahre' },
+  { enterprise_type: 'Mastrind', factor_per_unit: 0.018, unit: 'Tier', notes: 'Grossviehmast' },
+  { enterprise_type: 'Mastschwein', factor_per_unit: 0.005, unit: 'Platz', notes: 'Pro Mastplatz, Durchschnitt ~3 Umtriebe/Jahr' },
+  { enterprise_type: 'Zuchtsau', factor_per_unit: 0.025, unit: 'Platz', notes: 'Inkl. Ferkelaufzucht bis 25 kg' },
+  { enterprise_type: 'Legehenne', factor_per_unit: 0.0015, unit: 'Platz', notes: 'Bodenhaltung, BTS-tauglich' },
+  { enterprise_type: 'Mastpoulet', factor_per_unit: 0.0008, unit: 'Platz', notes: 'Konventionelle Mast' },
+  { enterprise_type: 'Milchschaf', factor_per_unit: 0.012, unit: 'Tier', notes: 'Mit Lammaufzucht' },
+  { enterprise_type: 'Mutterziege', factor_per_unit: 0.010, unit: 'Tier', notes: 'Milch- oder Fleischziege' },
+  // Soemmerung / Diversifikation
+  { enterprise_type: 'Soemmrung Alp', factor_per_unit: 0.008, unit: 'NST', notes: 'Normalstoss (1 GVE x 100 Tage), Alpbetrieb' },
+  { enterprise_type: 'Agrotourismus', factor_per_unit: 0.005, unit: 'Bett', notes: 'Ferienwohnung, Schlaf im Stroh etc.' },
+  { enterprise_type: 'Direktvermarktung', factor_per_unit: 0.040, unit: '10000 CHF Umsatz', notes: 'Hofladen, Marktfahren' },
 ];
 
+const insertSak = db.instance.prepare(
+  'INSERT INTO sak_factors (enterprise_type, factor_per_unit, unit, notes, jurisdiction) VALUES (?, ?, ?, ?, ?)'
+);
+for (const s of sakFactors) {
+  insertSak.run(s.enterprise_type, s.factor_per_unit, s.unit, s.notes, 'CH');
+}
+console.log(`Inserted ${sakFactors.length} SAK factors`);
+
 // ---------------------------------------------------------------------------
-// 2. Soil Types — Swiss soil classification (10 types)
-//    Source: GRUD Anhang, Bodenkarte Schweiz
+// 2. Business Structures (Rechtsformen) — AGRIDEA, Handelsregister
 // ---------------------------------------------------------------------------
 
-interface SoilType {
-  id: string;
-  name: string;
-  soil_group: number;
-  texture: string;
-  drainage_class: string;
-  ph_class: string;
+interface BusinessStructure {
+  structure_type: string;
   description: string;
+  tax_treatment: string;
+  pros: string;
+  cons: string;
 }
 
-const soilTypes: SoilType[] = [
-  { id: 'leichter-sand', name: 'Leichter Sandboden', soil_group: 1, texture: 'sand', drainage_class: 'sehr durchlaessig', ph_class: 'B', description: 'Tiefgruendiger Sandboden, <10% Ton, geringe Wasserhaltefaehigkeit' },
-  { id: 'sandiger-lehm', name: 'Sandiger Lehmboden', soil_group: 2, texture: 'sandiger-lehm', drainage_class: 'gut durchlaessig', ph_class: 'C', description: '10-15% Ton, gute Bearbeitbarkeit, mittlere Wasserhaltefaehigkeit' },
-  { id: 'leichter-lehm', name: 'Leichter Lehmboden', soil_group: 3, texture: 'lehm', drainage_class: 'maessig durchlaessig', ph_class: 'C', description: '15-20% Ton, vielseitig nutzbar, gute Naehrstoffversorgung' },
-  { id: 'mittlerer-lehm', name: 'Mittlerer Lehmboden', soil_group: 4, texture: 'lehm', drainage_class: 'maessig durchlaessig', ph_class: 'C', description: '20-30% Ton, gute Ertragsfaehigkeit, typischer Ackerboden Mittelland' },
-  { id: 'schwerer-lehm', name: 'Schwerer Lehmboden', soil_group: 5, texture: 'toniger-lehm', drainage_class: 'schwer durchlaessig', ph_class: 'C', description: '30-40% Ton, hohe Naehrstoffspeicherung, schwere Bearbeitung' },
-  { id: 'tonboden', name: 'Tonboden', soil_group: 6, texture: 'ton', drainage_class: 'sehr schwer durchlaessig', ph_class: 'D', description: '>40% Ton, sehr hohe Naehrstoffspeicherung, Staunassegefahr' },
-  { id: 'humoser-lehm', name: 'Humoser Lehmboden', soil_group: 7, texture: 'humoser-lehm', drainage_class: 'maessig durchlaessig', ph_class: 'C', description: '4-8% Humus, hohe biologische Aktivitaet, gute Strukturstabilitaet' },
-  { id: 'moorig', name: 'Mooriger Boden', soil_group: 8, texture: 'torf', drainage_class: 'variabel', ph_class: 'A', description: '>15% organische Substanz, hohes N-Nachlieferungspotenzial, Sackungs­gefahr' },
-  { id: 'kalkboden', name: 'Kalkboden / Rendzina', soil_group: 9, texture: 'kalkig-lehm', drainage_class: 'gut durchlaessig', ph_class: 'E', description: 'Karbonatreicher Boden, pH >7.5, Jura/Voralpen typisch, P-Festlegung' },
-  { id: 'bergboden', name: 'Brauner Bergboden', soil_group: 10, texture: 'steiniger-lehm', drainage_class: 'gut durchlaessig', ph_class: 'B', description: 'Flachgruendig, steinig, Bergzone I-IV, tiefere Ertraege' },
+const businessStructures: BusinessStructure[] = [
+  {
+    structure_type: 'Einzelunternehmen',
+    description: 'Standardform fuer Schweizer Landwirtschaftsbetriebe. Der Betriebsleiter haftet mit dem gesamten Privatvermoegen. ' +
+      'Kein Handelsregistereintrag erforderlich unter 100,000 CHF Umsatz. Einfachste Gruendung und Verwaltung.',
+    tax_treatment: 'Landwirtschaftliches Einkommen wird als Einkommen aus selbstaendiger Erwerbstaetigkeit besteuert (Einkommenssteuer). ' +
+      'Naturaleinkommen (Eigenverbrauch) ist steuerpflichtig. AHV/IV/EO-Beitraege als Selbstaendiger (10.6% ab 60,500 CHF Einkommen). ' +
+      'Privilegierte Besteuerung bei Aufgabe der Selbstbewirtschaftung (aufgeschobene Grundstueckgewinnsteuer).',
+    pros: 'Einfachste Rechtsform; keine Gruendungskosten; volle Entscheidungsfreiheit; privilegierte Besteuerung bei Hofuebergabe (BGBB); ' +
+      'Ertragswert-Uebergabe innerhalb Familie moeglich; kein Mindestkapital',
+    cons: 'Unbeschraenkte persoenliche Haftung; Betrieb und Privatvermoegen nicht getrennt; Nachfolge nur durch Einzelperson; ' +
+      'keine Risikobegrenzung bei Investitionen; Betrieb endet bei Tod ohne Regelung',
+  },
+  {
+    structure_type: 'Einfache Gesellschaft',
+    description: 'Zusammenschluss von zwei oder mehr Personen (z.B. Vater und Sohn) ohne eigene Rechtspersoenlichkeit. ' +
+      'Haeufig als Generationengemeinschaft oder Betriebsgemeinschaft genutzt. Vertraglich geregelt (OR Art. 530ff).',
+    tax_treatment: 'Keine eigene Steuerpflicht — Einkommen wird anteilig den Gesellschaftern zugerechnet. ' +
+      'Jeder Gesellschafter versteuert seinen Anteil als Einkommen aus selbstaendiger Taetigkeit. ' +
+      'AHV-Beitraege pro Gesellschafter individuell.',
+    pros: 'Einfache Gruendung (schriftlicher Vertrag genuegt); ideal fuer Generationenuebergang; mehrere Familienmitglieder ' +
+      'koennen eingebunden werden; flexible Gewinnverteilung; BGBB-Privilegien bleiben erhalten',
+    cons: 'Solidarische und unbeschraenkte Haftung aller Gesellschafter; kein Handelsregistereintrag moeglich; ' +
+      'Aufloesung bei Tod/Austritt eines Gesellschafters (ohne abweichende Vereinbarung); potenzielle Konflikte bei Entscheidungen',
+  },
+  {
+    structure_type: 'Generationengemeinschaft',
+    description: 'Sonderform der einfachen Gesellschaft: Die uebergebende und die uebernehmende Generation bewirtschaften ' +
+      'den Betrieb gemeinsam waehrend einer Uebergangsphase (typisch 3-10 Jahre). Haeufigste Form der schrittweisen Betriebsuebergabe ' +
+      'in der Schweizer Landwirtschaft. Vertragliche Regelung von Arbeitsteilung, Entschaedigung und Zeitplan.',
+    tax_treatment: 'Wie einfache Gesellschaft: anteilige Besteuerung. Uebergabender kann schrittweise AHV-Rente beziehen. ' +
+      'Wichtig: Betrieb muss als landwirtschaftliches Gewerbe (>= 1.0 SAK) qualifizieren fuer BGBB-Privilegien.',
+    pros: 'Sanfter Uebergang; Erfahrungsweitergabe; schrittweise Verantwortungsuebertragung; AHV-Uebergang moeglich; ' +
+      'BGBB-Schutz bleibt bestehen; beide Generationen erhalten Einkommen',
+    cons: 'Potenzial fuer Generationenkonflikte; klare vertragliche Regelung erforderlich; solidarische Haftung; ' +
+      'Dauer muss begrenzt sein (Steuerverwaltung prueft Ernsthaftigkeit); Buchhaltung fuer beide Parteien',
+  },
+  {
+    structure_type: 'GmbH',
+    description: 'Gesellschaft mit beschraenkter Haftung (OR Art. 772ff). Selten in der Schweizer Landwirtschaft, ' +
+      'da BGBB-Privilegien (Ertragswert, Zuweisungsanspruch) nur fuer natuerliche Personen gelten. ' +
+      'Mindestkapital 20,000 CHF. Handelsregistereintrag und Revisionsstelle erforderlich.',
+    tax_treatment: 'Juristische Person: Gewinnsteuer (Bund 8.5%, kantonal variabel 12-24%) plus Kapitalsteuer. ' +
+      'Ausschuettungen an Gesellschafter als Dividendeneinkommen besteuert (Teilbesteuerung 50-70% bei qualifizierter Beteiligung). ' +
+      'KEIN privilegierter Ertragswert bei Uebertragung — Verkehrswert massgebend.',
+    pros: 'Beschraenkte Haftung (nur Stammkapital); Trennung Privat-/Geschaeftsvermoegen; professionelle Aussenwirkung; ' +
+      'Beteiligung mehrerer Personen moeglich; Betrieb besteht unabhaengig von Personen',
+    cons: 'Verlust der BGBB-Privilegien (kein Ertragswert, kein Zuweisungsanspruch); Doppelbesteuerung (Gewinn + Dividende); ' +
+      'hoehere Verwaltungskosten (Buchhaltung, Revision); Grundstueckgewinnsteuer bei Einlage; 20,000 CHF Mindestkapital; ' +
+      'komplexere Uebergabe',
+  },
+  {
+    structure_type: 'Genossenschaft',
+    description: 'Genossenschaft (OR Art. 828ff). Traditionell verbreitet als Alpgenossenschaft, Kaesereigenossenschaft, ' +
+      'Maschinengenossenschaft oder Wasserversorgungsgenossenschaft. Mindestens 7 Mitglieder. Demokratisches Prinzip (1 Mitglied = 1 Stimme). ' +
+      'Nicht geeignet fuer Einzelbetriebe, aber wichtig fuer gemeinschaftliche Infrastruktur.',
+    tax_treatment: 'Juristische Person: Gewinnsteuer. Genossenschaftliche Rueckverguetungen (Patronatsverguetung) sind abzugsfaehig. ' +
+      'Landwirtschaftliche Genossenschaften geniessen teilweise Steuerprivilegien (Art. 23 Abs. 1 lit. f StHG). ' +
+      'Keine BGBB-Privilegien fuer die Genossenschaft selbst.',
+    pros: 'Demokratische Mitbestimmung; Risikoteilung; gemeinsame Investitionen; Steuerprivilegien fuer landw. Genossenschaften; ' +
+      'Tradition und Akzeptanz im laendlichen Raum; beschraenkte Haftung der Mitglieder',
+    cons: 'Mindestens 7 Mitglieder erforderlich; langsame Entscheidungsprozesse; kein individueller Gewinn (Rueckverguetung); ' +
+      'Handelsregistereintrag und Statuten erforderlich; nicht fuer Einzelbetriebe geeignet',
+  },
 ];
 
+const insertBs = db.instance.prepare(
+  'INSERT INTO business_structures (structure_type, description, tax_treatment, pros, cons, jurisdiction) VALUES (?, ?, ?, ?, ?, ?)'
+);
+for (const bs of businessStructures) {
+  insertBs.run(bs.structure_type, bs.description, bs.tax_treatment, bs.pros, bs.cons, 'CH');
+}
+console.log(`Inserted ${businessStructures.length} business structures`);
+
 // ---------------------------------------------------------------------------
-// 3. Nutrient Recommendations — GRUD 2017
-//    N based on Stickstoffbedarfswerte, P/K on GRUD Entzugsduengung
+// 3. Tax Rules — Steuerliche Behandlung landwirtschaftlicher Betriebe
 // ---------------------------------------------------------------------------
 
-interface NutrientRec {
-  crop_id: string;
-  soil_group: number;
-  altitude_zone: string;
-  previous_crop_group: string | null;
-  n_rec_kg_ha: number;
-  p_rec_kg_ha: number;
-  k_rec_kg_ha: number;
-  mg_rec_kg_ha: number;
+interface TaxRule {
+  topic: string;
+  rule: string;
+  description: string;
+  legal_basis: string;
+}
+
+const taxRules: TaxRule[] = [
+  {
+    topic: 'Einkommen aus Landwirtschaft',
+    rule: 'Landwirtschaftliches Einkommen als selbstaendige Erwerbstaetigkeit',
+    description: 'Landwirtschaftliches Einkommen wird als Einkommen aus selbstaendiger Erwerbstaetigkeit besteuert ' +
+      '(DBG Art. 18). Dazu gehoeren: Einkuenfte aus Pflanzenbau und Tierhaltung, Naturaleinkommen (Eigenverbrauch ' +
+      'von Lebensmitteln, Mietwert der Betriebsleiterwohnung), Nebeneinkuenfte aus landwirtschaftsnaher Taetigkeit ' +
+      '(Lohnarbeit, Agrotourismus). Abzugsfaehig sind Betriebskosten, Abschreibungen und Schuldzinsen.',
+    legal_basis: 'DBG Art. 18 (Einkommen aus selbstaendiger Erwerbstaetigkeit), StHG Art. 8',
+  },
+  {
+    topic: 'Naturaleinkommen',
+    rule: 'Eigenverbrauch und Wohnungsnutzung sind steuerpflichtig',
+    description: 'Der Wert selbstverbrauchter landwirtschaftlicher Produkte (Fleisch, Milch, Gemuese, Eier) ist als ' +
+      'Naturaleinkommen steuerbar. Die Eidgenoessische Steuerverwaltung (ESTV) veroeffentlicht jaehrlich Ansaetze ' +
+      'fuer die Bewertung (ca. 4,800-7,200 CHF/Jahr fuer Ehepaar mit Kindern). Der Mietwert der Betriebsleiterwohnung ' +
+      '(Eigenmietwert) wird zum Einkommen addiert.',
+    legal_basis: 'DBG Art. 21 (Eigenmietwert), DBG Art. 18 (Naturaleinkommen), ESTV-Merkblatt',
+  },
+  {
+    topic: 'Eigenmietwert',
+    rule: 'Mietwert der Betriebsleiterwohnung ist steuerbar',
+    description: 'Wie alle Eigentuemer muessen Landwirte den Eigenmietwert ihrer selbstbewohnten Liegenschaft als ' +
+      'Einkommen versteuern. Bei landwirtschaftlichen Wohngebaeuden wird der Mietwert nach kantonalen Schaetzungsregeln ' +
+      'bestimmt (typisch 60-70% des Marktmietwerts). Hypothekarzinsen und Unterhaltskosten sind abzugsfaehig. ' +
+      'Politische Diskussion zur Abschaffung des Eigenmietwerts ist laufend (Stand 2025).',
+    legal_basis: 'DBG Art. 21 Abs. 1 lit. b, kantonale Steuergesetze',
+  },
+  {
+    topic: 'Grundstueckgewinnsteuer',
+    rule: 'Besteuerung des Gewinns bei Veraeusserung landwirtschaftlicher Grundstuecke',
+    description: 'Beim Verkauf landwirtschaftlicher Grundstuecke faellt Grundstueckgewinnsteuer an (kantonal geregelt). ' +
+      'Massgebend ist die Differenz zwischen Erloes und Anlagekosten. Bei Betrieben im Geltungsbereich des BGBB gelten ' +
+      'besondere Regeln: Veraeusserung zum Ertragswert innerhalb der Familie loest keine Grundstueckgewinnsteuer aus. ' +
+      'Bei Aufgabe der Selbstbewirtschaftung und Verkauf zum Verkehrswert wird die Differenz zwischen Ertragswert und ' +
+      'Verkehrswert als Einkommen besteuert (privilegiert, da aufgeschobene Besteuerung).',
+    legal_basis: 'DBG Art. 18 Abs. 4, BGBB Art. 28ff, StHG Art. 12, kantonale Steuergesetze',
+  },
+  {
+    topic: 'Privilegierte Besteuerung bei Hofuebergabe',
+    rule: 'Aufgeschobene Besteuerung bei Uebergabe zum Ertragswert',
+    description: 'Die Uebergabe eines landwirtschaftlichen Gewerbes innerhalb der Familie zum Ertragswert (BGBB) loest ' +
+      'keine Einkommens- oder Grundstueckgewinnsteuer aus — die stillen Reserven werden aufgeschoben. Erst bei spaeterer ' +
+      'Veraeusserung durch den Uebernehmer (oder dessen Erben) zum Verkehrswert wird die Differenz besteuert. ' +
+      'Voraussetzungen: Betrieb qualifiziert als landwirtschaftliches Gewerbe (>= 1.0 SAK), Uebernehmer ist Selbstbewirtschafter, ' +
+      'Uebergabe innerhalb der BGBB-berechtigten Verwandtschaft.',
+    legal_basis: 'DBG Art. 18 Abs. 4, BGBB Art. 17-22, BGE 138 II 32',
+  },
+  {
+    topic: 'AHV/IV/EO Beitraege Selbstaendige',
+    rule: 'Beitragssatz 10.6% ab 60,500 CHF Einkommen',
+    description: 'Selbstaendige Landwirte zahlen AHV/IV/EO-Beitraege auf ihrem Nettoeinkommen aus selbstaendiger ' +
+      'Erwerbstaetigkeit. Der Beitragssatz betraegt 10.6% bei einem Einkommen ab 60,500 CHF (sinkende Skala ' +
+      'darunter, Minimum 5.371% bei 10,100 CHF). Dazu kommen Beitraege an die Familienausgleichskasse (FAK) ' +
+      'fuer Familienzulagen (kantonal 1.0-3.5%). Landwirtschaftliche Arbeitnehmer (z.B. Angestellte) sind ' +
+      'obligatorisch AHV-versichert (je 5.3% Arbeitgeber/Arbeitnehmer).',
+    legal_basis: 'AHVG Art. 8, AHVV Art. 23, AHVV Art. 25',
+  },
+  {
+    topic: 'Familienzulagen Landwirtschaft (FLG)',
+    rule: 'Kinderzulage 200 CHF/Monat, Haushaltungszulage Berggebiet',
+    description: 'Das Bundesgesetz ueber die Familienzulagen in der Landwirtschaft (FLG) gewaehrt selbstaendigen ' +
+      'Landwirten: Kinderzulage 200 CHF/Monat pro Kind (250 CHF ab 16 Jahre in Ausbildung), Haushaltungszulage ' +
+      '100 CHF/Monat im Berggebiet (Bergzone I-IV und Soemmerungsgebiet). Finanziert durch Arbeitgeber- ' +
+      'und Bundesmittel. Anspruch besteht, wenn das landwirtschaftliche Einkommen mindestens 50% des Gesamteinkommens ' +
+      'ausmacht oder der Betrieb mindestens 0.5 SAK umfasst.',
+    legal_basis: 'FLG Art. 5-10 (SR 836.1), FLV (SR 836.11)',
+  },
+  {
+    topic: 'Abschreibungen landwirtschaftliche Gebaeude',
+    rule: 'Steuerliche Abschreibungen auf Betriebsgebaeude und Maschinen',
+    description: 'Landwirtschaftliche Betriebsgebaeude koennen steuerlich abgeschrieben werden: Oekonomiegebaeude ' +
+      '(Stall, Scheune) bis 6% degressiv oder 3% linear, Wohnhaus des Betriebsleiters bis 3% degressiv oder 1.5% linear, ' +
+      'Maschinen und Geraete bis 40% degressiv oder 20% linear. Der Buchwert darf nicht unter den Ertragswert sinken ' +
+      '(bei landwirtschaftlichen Liegenschaften). Investitionen in Tierwohl (BTS/RAUS-Umbauten) koennen teilweise ' +
+      'sofort abgeschrieben werden, sofern subventionsfinanziert.',
+    legal_basis: 'DBG Art. 28, kantonale Praxis, KS ESTV 12/2022',
+  },
+  {
+    topic: 'Mehrwertsteuer Landwirtschaft',
+    rule: 'Pauschalsteuersatz 2.8% oder ordentliche Abrechnung',
+    description: 'Landwirte mit einem Umsatz unter 100,000 CHF aus nicht-landwirtschaftlicher Taetigkeit und unter ' +
+      '150,000 CHF Steuerbetrag sind von der MWST-Pflicht befreit. Wer MWST-pflichtig ist, kann zwischen ' +
+      'effektiver Abrechnung und Pauschalsteuersatzmethode waehlen. Der landwirtschaftliche Pauschalsteuersatz ' +
+      'betraegt 2.8% (Urproduktion) und erlaubt keine Vorsteuerabzuege. Direktvermarktung, Agrotourismus und ' +
+      'Lohnarbeit werden zum Normalsatz (8.1%) besteuert.',
+    legal_basis: 'MWSTG Art. 10, Art. 37 (SR 641.20)',
+  },
+  {
+    topic: 'Vermoegenssteuer landwirtschaftliche Liegenschaften',
+    rule: 'Bewertung zum Ertragswert fuer Vermoegenssteuer',
+    description: 'Fuer die kantonale Vermoegenssteuer werden landwirtschaftliche Liegenschaften zum Ertragswert bewertet ' +
+      '(deutlich unter Verkehrswert, typisch 30-50%). Dies fuehrt zu einer erheblichen Steuerersparnis gegenueber ' +
+      'nichtlandwirtschaftlichen Liegenschaften. Die Bewertung gilt nur, solange der Eigentruemer Selbstbewirtschafter ist ' +
+      'und das Grundstueck der landwirtschaftlichen Nutzung dient.',
+    legal_basis: 'StHG Art. 14 Abs. 1, BGBB Art. 10, kantonale Steuergesetze',
+  },
+];
+
+const insertTax = db.instance.prepare(
+  'INSERT INTO tax_rules (topic, rule, description, legal_basis, jurisdiction) VALUES (?, ?, ?, ?, ?)'
+);
+for (const t of taxRules) {
+  insertTax.run(t.topic, t.rule, t.description, t.legal_basis, 'CH');
+}
+console.log(`Inserted ${taxRules.length} tax rules`);
+
+// ---------------------------------------------------------------------------
+// 4. Succession Planning — Betriebsuebergabe (BGBB)
+// ---------------------------------------------------------------------------
+
+interface SuccessionScenario {
+  scenario: string;
+  description: string;
+  ertragswert_rule: string;
+  tax_implications: string;
+}
+
+const successionScenarios: SuccessionScenario[] = [
+  {
+    scenario: 'Ertragswertprinzip',
+    description: 'Zentrales Prinzip des BGBB: Ein landwirtschaftliches Gewerbe (>= 1.0 SAK) kann innerhalb der Familie ' +
+      'zum Ertragswert uebertragen werden. Der Ertragswert wird nach einer gesetzlich festgelegten Methode berechnet ' +
+      '(Schaetzungsanleitung des Bundes) und liegt typischerweise bei 30-50% des Verkehrswerts. Die Differenz stellt ' +
+      'eine gesetzlich gewollte Beguenstigung des uebernehmenden Selbstbewirtschafters dar.',
+    ertragswert_rule: 'Berechnung nach Schaetzungsanleitung (Art. 10 BGBB): Kapitalisierung des nachhaltig erzielbaren ' +
+      'Nettoertrags. Massgebend sind Bodenqualitaet, Gebaeudezustand, Ausstattung und Lage. Der Zinssatz zur Kapitalisierung ' +
+      'wird vom Bundesrat festgelegt. Aktueller Faktor ergibt ca. 30-50% des Verkehrswerts.',
+    tax_implications: 'Keine Einkommens- oder Grundstueckgewinnsteuer bei Uebergabe zum Ertragswert innerhalb der Familie. ' +
+      'Stille Reserven werden aufgeschoben. Schenkungs- und Erbschaftssteuer: kantonal unterschiedlich, oft steuerfrei ' +
+      'zwischen Eltern und Kindern.',
+  },
+  {
+    scenario: 'Zuweisungsanspruch',
+    description: 'Bei der Erbteilung kann jeder Erbe, der Selbstbewirtschafter ist, verlangen, dass ihm das landwirtschaftliche ' +
+      'Gewerbe zum Ertragswert zugewiesen wird (BGBB Art. 11). Dies gilt auch gegen den Willen der Miterben. ' +
+      'Voraussetzung: Der Erbe muss persoenlich geeignet sein und den Betrieb selber bewirtschaften wollen. ' +
+      'Der Zuweisungsanspruch hat Vorrang vor dem freien Marktverkauf.',
+    ertragswert_rule: 'Zuweisung zum Ertragswert (BGBB Art. 11, Art. 17). Die Miterben erhalten den Ertragswert als ' +
+      'Erbanrechnungswert — nicht den Verkehrswert. Die Differenz zum Verkehrswert verbleibt beim Uebernehmer.',
+    tax_implications: 'Keine unmittelbare Besteuerung der Differenz. Bei spaeterer Veraeusserung innerhalb von 25 Jahren ' +
+      'greift der Gewinnanspruch der Miterben (BGBB Art. 28ff).',
+  },
+  {
+    scenario: 'Gewinnanspruch',
+    description: 'Wenn der Uebernehmer das landwirtschaftliche Gewerbe (oder Teile davon) innerhalb von 25 Jahren nach ' +
+      'der Uebergabe zum Ertragswert veraeussert, haben die Miterben Anspruch auf einen Anteil des Gewinns ' +
+      '(Differenz Ertragswert — Veraeusserungserloes). Der Anspruch sinkt jaehrlich und erloescht nach 25 Jahren vollstaendig.',
+    ertragswert_rule: 'Gewinn = Veraeusserungserloes minus Ertragswert (angepasst). Anspruch der Miterben: in den ersten ' +
+      '6 Jahren voller Anteil, dann linear abnehmend bis 25. Jahr. Berechnung gemaess BGBB Art. 28-30.',
+    tax_implications: 'Der Veraeusserungsgewinn unterliegt der Grundstueckgewinnsteuer (kantonal). Bei nicht-landwirtschaftlicher ' +
+      'Nutzung (z.B. Einzonung als Bauland) kann die Steuerbelastung erheblich sein. Die Beteiligungsdauer beeinflusst ' +
+      'den Steuersatz (Besitzdauerabzug kantonal).',
+  },
+  {
+    scenario: 'Integralberechnung',
+    description: 'Bei der Erbteilung werden landwirtschaftliche Grundstuecke zum Ertragswert berechnet (Integralberechnung). ' +
+      'Das bedeutet: Der gesamte Nachlass wird aufgeteilt, wobei das landwirtschaftliche Gewerbe nur zum Ertragswert — ' +
+      'nicht zum Verkehrswert — eingerechnet wird. Die Miterben erhalten ihren Erbteil basierend auf diesem tieferen Wert. ' +
+      'Dies kann zu einer erheblichen wirtschaftlichen Beguenstigung des Uebernehmers fuehren.',
+    ertragswert_rule: 'Nachlasswert = Ertragswert (landw. Gewerbe) + Verkehrswert (uebrige Vermoegen). Erbteil der ' +
+      'Miterben berechnet sich auf dieser Basis. Der Uebernehmer erhaelt das Gewerbe zum Ertragswert angerechnet.',
+    tax_implications: 'Erbschafts- und Schenkungssteuern (kantonal): Oft keine Steuer zwischen Eltern und Kindern. ' +
+      'Einige Kantone besteuern die Differenz zum Verkehrswert als geldwerten Vorteil.',
+  },
+  {
+    scenario: 'Vorkaufsrecht der Familie',
+    description: 'Das BGBB raeumt Verwandten (Nachkommen, Geschwister, Eltern) ein Vorkaufsrecht bei der Veraeusserung ' +
+      'eines landwirtschaftlichen Gewerbes ein (BGBB Art. 42ff). Das Vorkaufsrecht besteht zum Ertragswert (nicht zum ' +
+      'Verkehrswert). Es kann nicht vertraglich wegbedungen werden. Das Vorkaufsrecht gilt auch bei Zwangsversteigerung.',
+    ertragswert_rule: 'Vorkaufsrecht zum Ertragswert (BGBB Art. 42-49). Der Kaeufer zahlt den Ertragswert, nicht den ' +
+      'vom Verkaeufer allenfalls mit einem Dritten vereinbarten hoeheren Preis.',
+    tax_implications: 'Gleich wie bei Zuweisungsanspruch: Gewinnanspruch der Miterben bei spaeterer Veraeusserung. ' +
+      'Keine Grundstueckgewinnsteuer bei Ausuebung des Vorkaufsrechts zum Ertragswert.',
+  },
+  {
+    scenario: 'Paechter als Uebernehmer',
+    description: 'Paechter eines landwirtschaftlichen Gewerbes haben kein gesetzliches Uebernahmerecht. Sie koennen ' +
+      'jedoch ein Kaufrecht vertraglich vereinbaren. Bei langjaehriger Pacht (> 6 Jahre) besteht Kuendigungsschutz ' +
+      '(LPG Art. 15ff). Wenn der Verpaechter verkaufen will, hat der Paechter kein BGBB-Vorkaufsrecht, es sei denn, ' +
+      'er gehoert zur berechtigten Verwandtschaft.',
+    ertragswert_rule: 'Kein gesetzlicher Anspruch auf Ertragswert fuer Paechter. Marktpreis oder vertraglich vereinbarter ' +
+      'Preis (aber immer innerhalb des BGBB-Rahmens, d.h. max. Verkehrswert). Bewilligungspflicht durch kantonale ' +
+      'BGBB-Behoerde.',
+    tax_implications: 'Kauf zum Verkehrswert: Grundstueckgewinnsteuer beim Verkaeufer. Keine privilegierte Besteuerung, ' +
+      'da nicht innerhalb der Familie.',
+  },
+];
+
+const insertSucc = db.instance.prepare(
+  'INSERT INTO succession_planning (scenario, description, ertragswert_rule, tax_implications, jurisdiction) VALUES (?, ?, ?, ?, ?)'
+);
+for (const s of successionScenarios) {
+  insertSucc.run(s.scenario, s.description, s.ertragswert_rule, s.tax_implications, 'CH');
+}
+console.log(`Inserted ${successionScenarios.length} succession scenarios`);
+
+// ---------------------------------------------------------------------------
+// 5. Gross Margins (Deckungsbeitraege) — Agroscope ZA-BH / AGRIDEA
+//    All values in CHF, representative for Talzone unless noted
+// ---------------------------------------------------------------------------
+
+interface GrossMargin {
+  enterprise_type: string;
+  margin_chf: number;
+  yield_unit: string;
   notes: string;
-  grud_section: string;
-}
-
-const nutrientRecs: NutrientRec[] = [
-  // Winterweizen — Talzone, different soil groups
-  { crop_id: 'winterweizen', soil_group: 1, altitude_zone: 'talzone', previous_crop_group: null, n_rec_kg_ha: 140, p_rec_kg_ha: 52, k_rec_kg_ha: 65, mg_rec_kg_ha: 15, notes: 'N-Bedarfswert GRUD: 140 kg N/ha bei 6.5 t/ha Ertrag. P/K Entzugsduengung bei Versorgungsklasse C.', grud_section: 'GRUD Kap. 6/7' },
-  { crop_id: 'winterweizen', soil_group: 4, altitude_zone: 'talzone', previous_crop_group: null, n_rec_kg_ha: 140, p_rec_kg_ha: 48, k_rec_kg_ha: 55, mg_rec_kg_ha: 12, notes: 'Mittlerer Lehm: leicht reduzierter K-Bedarf durch hoehere Bodenvorraete.', grud_section: 'GRUD Kap. 6/7' },
-  { crop_id: 'winterweizen', soil_group: 4, altitude_zone: 'talzone', previous_crop_group: 'koernerleguminosen', n_rec_kg_ha: 120, p_rec_kg_ha: 48, k_rec_kg_ha: 55, mg_rec_kg_ha: 12, notes: 'Vorfrucht Leguminose: N-Reduktion um 20 kg/ha (Suisse-Bilanz Korrekturfaktor).', grud_section: 'GRUD Kap. 6/7' },
-  { crop_id: 'winterweizen', soil_group: 4, altitude_zone: 'huegelzone', previous_crop_group: null, n_rec_kg_ha: 120, p_rec_kg_ha: 42, k_rec_kg_ha: 48, mg_rec_kg_ha: 10, notes: 'Huegelzone: reduzierter Ertrag (~5.5 t/ha) und entsprechend geringerer Naehrstoffbedarf.', grud_section: 'GRUD Kap. 6/7' },
-
-  // Winterraps
-  { crop_id: 'winterraps', soil_group: 4, altitude_zone: 'talzone', previous_crop_group: null, n_rec_kg_ha: 150, p_rec_kg_ha: 56, k_rec_kg_ha: 70, mg_rec_kg_ha: 15, notes: 'Hoher N-Bedarf, Herbst-N beachten (40-60 kg N vor Winter fuer Rosette). S-Duengung 20-30 kg S/ha empfohlen.', grud_section: 'GRUD Kap. 6' },
-
-  // Koernermais
-  { crop_id: 'koernermais', soil_group: 4, altitude_zone: 'talzone', previous_crop_group: null, n_rec_kg_ha: 130, p_rec_kg_ha: 65, k_rec_kg_ha: 60, mg_rec_kg_ha: 15, notes: 'N-Bedarfswert bei 10 t/ha. Band-/Unterfussduengung reduziert P-Bedarf. Mais hat hohes K-Aufnahmevermoegen.', grud_section: 'GRUD Kap. 6/7' },
-
-  // Silomais
-  { crop_id: 'silomais', soil_group: 4, altitude_zone: 'talzone', previous_crop_group: null, n_rec_kg_ha: 120, p_rec_kg_ha: 68, k_rec_kg_ha: 200, mg_rec_kg_ha: 15, notes: 'Hoher K-Entzug durch Ganzpflanzenernte! Hofduenger bevorzugt einsetzen.', grud_section: 'GRUD Kap. 6/7' },
-
-  // Kartoffeln
-  { crop_id: 'kartoffeln', soil_group: 4, altitude_zone: 'talzone', previous_crop_group: null, n_rec_kg_ha: 140, p_rec_kg_ha: 55, k_rec_kg_ha: 200, mg_rec_kg_ha: 20, notes: 'Kartoffeln: hoher K-Bedarf. Chloridempfindlich — Kalidüngung im Herbst (Patentkali) oder chloridfreie Formen.', grud_section: 'GRUD Kap. 6/7' },
-
-  // Zuckerrueben
-  { crop_id: 'zuckerrueben', soil_group: 4, altitude_zone: 'talzone', previous_crop_group: null, n_rec_kg_ha: 120, p_rec_kg_ha: 55, k_rec_kg_ha: 250, mg_rec_kg_ha: 25, notes: 'Niedrigerer N, um Zuckergehalt zu sichern. Sehr hoher K-Bedarf. Na-Duengung (50 kg/ha) foerdert Ertrag.', grud_section: 'GRUD Kap. 6/7' },
-
-  // Kunstwiese
-  { crop_id: 'kunstwiese-3j', soil_group: 4, altitude_zone: 'talzone', previous_crop_group: null, n_rec_kg_ha: 170, p_rec_kg_ha: 72, k_rec_kg_ha: 260, mg_rec_kg_ha: 20, notes: 'Bei >30% Kleeanteil: N-Reduktion um 30-50 kg/ha. Staffelung der N-Gaben ueber 4 Schnitte.', grud_section: 'GRUD Kap. 8' },
-
-  // Naturwiese intensiv
-  { crop_id: 'naturwiese-intensiv', soil_group: 4, altitude_zone: 'talzone', previous_crop_group: null, n_rec_kg_ha: 130, p_rec_kg_ha: 60, k_rec_kg_ha: 220, mg_rec_kg_ha: 15, notes: 'Talzone intensiv Dauergruenland. P/K-Entzugsduengung. Hofduenger deckt Grossteil des Bedarfs.', grud_section: 'GRUD Kap. 8' },
-
-  // Naturwiese mittelintensiv
-  { crop_id: 'naturwiese-mittelintensiv', soil_group: 4, altitude_zone: 'talzone', previous_crop_group: null, n_rec_kg_ha: 80, p_rec_kg_ha: 45, k_rec_kg_ha: 165, mg_rec_kg_ha: 10, notes: 'Wenig intensiv genutztes Gruenland. Max 3 Schnitte. Hofduenger in der Regel ausreichend.', grud_section: 'GRUD Kap. 8' },
-
-  // Dinkel
-  { crop_id: 'dinkel', soil_group: 4, altitude_zone: 'talzone', previous_crop_group: null, n_rec_kg_ha: 110, p_rec_kg_ha: 41, k_rec_kg_ha: 45, mg_rec_kg_ha: 10, notes: 'Dinkel (Urdinkel/UrDinkel): geringerer N-Bedarf als Weizen. Extenso-tauglich (ohne Fungizide/Insektizide).', grud_section: 'GRUD Kap. 6' },
-
-  // Eiweisserbsen
-  { crop_id: 'koernereiweisserbsen', soil_group: 4, altitude_zone: 'talzone', previous_crop_group: null, n_rec_kg_ha: 0, p_rec_kg_ha: 35, k_rec_kg_ha: 55, mg_rec_kg_ha: 10, notes: 'Leguminose: kein N-Duenger noetig (biologische N-Fixierung). Positive Vorfruchtwirkung 20-40 kg N/ha.', grud_section: 'GRUD Kap. 6' },
-
-  // Sojabohnen
-  { crop_id: 'sojabohnen', soil_group: 4, altitude_zone: 'talzone', previous_crop_group: null, n_rec_kg_ha: 0, p_rec_kg_ha: 42, k_rec_kg_ha: 55, mg_rec_kg_ha: 10, notes: 'Leguminose: Impfung mit Bradyrhizobium japonicum bei Erstanbau. Kein N-Duenger.', grud_section: 'GRUD Kap. 6' },
-];
-
-// ---------------------------------------------------------------------------
-// 4. Manure Values — GRUD Kapitel 10 (Hofduenger Naehrstoffgehalte)
-// ---------------------------------------------------------------------------
-
-interface ManureValue {
-  animal_category: string;
-  housing_system: string;
-  n_per_gve: number;
-  p2o5_per_gve: number;
-  k2o_per_gve: number;
-  nh3_loss_pct: number;
-  notes: string;
-}
-
-const manureValues: ManureValue[] = [
-  { animal_category: 'milchkuh', housing_system: 'laufstall', n_per_gve: 105, p2o5_per_gve: 35, k2o_per_gve: 115, nh3_loss_pct: 15, notes: 'Milchkuh 6500 kg/Jahr. Guelle + Mist. Laufstall reduziert NH3 vs. Anbindestall.' },
-  { animal_category: 'milchkuh', housing_system: 'anbindestall', n_per_gve: 105, p2o5_per_gve: 35, k2o_per_gve: 115, nh3_loss_pct: 18, notes: 'Anbindestall: hoehere NH3-Verluste durch groessere Guelleoberfläche.' },
-  { animal_category: 'mutterkuh', housing_system: 'tiefstreu', n_per_gve: 95, p2o5_per_gve: 32, k2o_per_gve: 100, nh3_loss_pct: 12, notes: 'Mutterkuhhaltung Tiefstreu. Weniger Guelle, mehr Mist.' },
-  { animal_category: 'aufzuchtrind', housing_system: 'laufstall', n_per_gve: 85, p2o5_per_gve: 28, k2o_per_gve: 90, nh3_loss_pct: 14, notes: 'Aufzucht 1-2 Jahre. Pro Tier ca. 0.4-0.6 GVE.' },
-  { animal_category: 'mastschwein', housing_system: 'spalten', n_per_gve: 112, p2o5_per_gve: 48, k2o_per_gve: 60, nh3_loss_pct: 20, notes: 'Mastschwein 25-110 kg. Pro Tier ca. 0.17 GVE. N-reduzierte Fuetterung senkt N-Anfall um 10-15%.' },
-  { animal_category: 'zuchtsau', housing_system: 'spalten', n_per_gve: 120, p2o5_per_gve: 55, k2o_per_gve: 65, nh3_loss_pct: 22, notes: 'Zuchtsau mit Ferkeln bis 8 kg. Pro Tier ca. 0.45 GVE.' },
-  { animal_category: 'legehenne', housing_system: 'bodenhaltung', n_per_gve: 145, p2o5_per_gve: 75, k2o_per_gve: 65, nh3_loss_pct: 25, notes: 'Legehenne. Pro Tier ca. 0.014 GVE. Huehnermist ist P-reich — Suisse-Bilanz beachten!' },
-  { animal_category: 'mastpoulet', housing_system: 'bodenhaltung', n_per_gve: 150, p2o5_per_gve: 62, k2o_per_gve: 70, nh3_loss_pct: 28, notes: 'Mastpoulet. Pro Tier ca. 0.005 GVE. Trockenheit Einstreu: hohe NH3-Verluste.' },
-  { animal_category: 'pferd', housing_system: 'box', n_per_gve: 80, p2o5_per_gve: 25, k2o_per_gve: 90, nh3_loss_pct: 15, notes: 'Pferd. Pro Tier ca. 1.0 GVE. Pferdemist: geringer N, hoher K, gut fuer Kompost.' },
-  { animal_category: 'schaf', housing_system: 'laufstall', n_per_gve: 85, p2o5_per_gve: 25, k2o_per_gve: 75, nh3_loss_pct: 12, notes: 'Mutterschaf mit Lamm. Pro Tier ca. 0.17 GVE. Schafmist gut strukturiert.' },
-  { animal_category: 'ziege', housing_system: 'laufstall', n_per_gve: 90, p2o5_per_gve: 28, k2o_per_gve: 80, nh3_loss_pct: 12, notes: 'Milchziege. Pro Tier ca. 0.17 GVE.' },
-];
-
-// ---------------------------------------------------------------------------
-// 5. Commodity Prices — Swiss producer prices (SBV/BLW data)
-// ---------------------------------------------------------------------------
-
-interface CommodityPrice {
-  crop_id: string;
-  market: string;
-  price_per_tonne: number;
-  price_source: string;
-  published_date: string;
   source: string;
 }
 
-const prices: CommodityPrice[] = [
-  { crop_id: 'winterweizen', market: 'produzentenpreis', price_per_tonne: 520, price_source: 'SBV/swiss granum', published_date: now, source: 'swiss granum Richtpreise Brotweizen Top' },
-  { crop_id: 'sommerweizen', market: 'produzentenpreis', price_per_tonne: 510, price_source: 'SBV/swiss granum', published_date: now, source: 'swiss granum Richtpreise Brotweizen I' },
-  { crop_id: 'wintergerste', market: 'produzentenpreis', price_per_tonne: 380, price_source: 'SBV/swiss granum', published_date: now, source: 'swiss granum Richtpreise Futtergerste' },
-  { crop_id: 'sommergerste', market: 'produzentenpreis', price_per_tonne: 440, price_source: 'SBV/swiss granum', published_date: now, source: 'swiss granum Richtpreise Braugerste' },
-  { crop_id: 'winterraps', market: 'produzentenpreis', price_per_tonne: 800, price_source: 'SBV/swiss granum', published_date: now, source: 'swiss granum Richtpreise HOLL-Raps' },
-  { crop_id: 'sonnenblumen', market: 'produzentenpreis', price_per_tonne: 760, price_source: 'SBV/swiss granum', published_date: now, source: 'swiss granum Richtpreise HO-Sonnenblumen' },
-  { crop_id: 'koernermais', market: 'produzentenpreis', price_per_tonne: 390, price_source: 'SBV/swiss granum', published_date: now, source: 'swiss granum Richtpreise Futtermais' },
-  { crop_id: 'kartoffeln', market: 'produzentenpreis', price_per_tonne: 320, price_source: 'swisspatat', published_date: now, source: 'swisspatat Richtpreise Speisekartoffeln fest' },
-  { crop_id: 'zuckerrueben', market: 'produzentenpreis', price_per_tonne: 52, price_source: 'Schweizer Zucker AG', published_date: now, source: 'Schweizer Zucker AG Ruebenpreis (inkl. Fruehrodungszuschlag)' },
-  { crop_id: 'dinkel', market: 'produzentenpreis', price_per_tonne: 620, price_source: 'SBV/swiss granum', published_date: now, source: 'swiss granum Richtpreise UrDinkel' },
-  { crop_id: 'koernereiweisserbsen', market: 'produzentenpreis', price_per_tonne: 530, price_source: 'SBV/swiss granum', published_date: now, source: 'swiss granum Richtpreise Futtereiweisserbsen' },
-  { crop_id: 'sojabohnen', market: 'produzentenpreis', price_per_tonne: 850, price_source: 'SBV/swiss granum', published_date: now, source: 'swiss granum Richtpreise Speisesoja' },
+const grossMargins: GrossMargin[] = [
+  // Pflanzenbau (CHF/ha, Talzone)
+  { enterprise_type: 'Winterweizen', margin_chf: 2800, yield_unit: 'CHF/ha', notes: 'Futterweizen Klasse Top/I, Talzone, 6.5 t/ha Ertrag, inkl. Einzelkulturbeitrag', source: 'Agroscope ZA-BH / AGRIDEA Deckungsbeitraege' },
+  { enterprise_type: 'Sommerweizen', margin_chf: 2400, yield_unit: 'CHF/ha', notes: 'Talzone, 5.5 t/ha', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Wintergerste', margin_chf: 2200, yield_unit: 'CHF/ha', notes: 'Futtergerste, Talzone, 6.5 t/ha', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Winterraps', margin_chf: 2600, yield_unit: 'CHF/ha', notes: 'HOLL-Raps, Talzone, 3.5 t/ha', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Silomais', margin_chf: 2500, yield_unit: 'CHF/ha', notes: 'Talzone, 17 t TS/ha, Eigenbedarf Milchvieh', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Koernermais', margin_chf: 2700, yield_unit: 'CHF/ha', notes: 'Talzone, 10 t/ha', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Kartoffeln', margin_chf: 7500, yield_unit: 'CHF/ha', notes: 'Speisekartoffeln, Talzone, 40 t/ha, hoher Aufwand', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Zuckerrueben', margin_chf: 4200, yield_unit: 'CHF/ha', notes: 'Talzone, 75 t/ha, Zuckergehalt 17%', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Sonnenblumen', margin_chf: 2100, yield_unit: 'CHF/ha', notes: 'HO-Sonnenblumen, Talzone, 3 t/ha', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Sojabohnen', margin_chf: 2300, yield_unit: 'CHF/ha', notes: 'Speisesoja, Talzone, 3 t/ha', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Kunstwiese', margin_chf: 1500, yield_unit: 'CHF/ha', notes: '3-jaehrig, Talzone, hauptsaechlich Eigenbedarf', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Naturwiese intensiv', margin_chf: 1200, yield_unit: 'CHF/ha', notes: 'Talzone, 3-4 Schnitte', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Extensiv genutzte Wiese', margin_chf: 800, yield_unit: 'CHF/ha', notes: 'BFF QI, 1-2 Schnitte, mit Biodiversitaetsbeitrag', source: 'Agroscope ZA-BH / AGRIDEA' },
+  // Tierhaltung (CHF/Tier oder CHF/Platz)
+  { enterprise_type: 'Milchkuh', margin_chf: 3000, yield_unit: 'CHF/Kuh', notes: 'Talzone, ~7,000 kg/Kuh, konventionell, inkl. Direktzahlungen (RAUS/BTS)', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Milchkuh Berggebiet', margin_chf: 2200, yield_unit: 'CHF/Kuh', notes: 'Bergzone I-II, ~5,500 kg/Kuh, inkl. Zuschlaege Berggebiet', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Mutterkuh', margin_chf: 1800, yield_unit: 'CHF/Kuh', notes: 'Mit Kalb, extensiv, Talzone/Huegelzone, inkl. GMF-Beitrag', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Mastrind', margin_chf: 600, yield_unit: 'CHF/Tier/Umtrieb', notes: 'Ausmast, ~200 Tage, Nature-Beef oder konventionell', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Mastschwein', margin_chf: 90, yield_unit: 'CHF/Platz', notes: 'Pro Mastplatz/Jahr, ~3 Umtriebe, QM-Schwein, stark marktabhaengig', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Zuchtsau', margin_chf: 700, yield_unit: 'CHF/Sau', notes: 'Inkl. Ferkelaufzucht bis 25 kg, ~24 Ferkel/Sau/Jahr', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Legehenne', margin_chf: 18, yield_unit: 'CHF/Platz', notes: 'Bodenhaltung, ~310 Eier/Jahr, QM-Programm', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Mastpoulet', margin_chf: 4, yield_unit: 'CHF/Platz/Umtrieb', notes: '~7 Umtriebe/Jahr, konventionell', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Milchschaf', margin_chf: 500, yield_unit: 'CHF/Tier', notes: 'Mit Lammaufzucht, Direktvermarktung Kaese', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Mutterziege', margin_chf: 350, yield_unit: 'CHF/Tier', notes: 'Milch- oder Fleischproduktion, Nischenprodukt', source: 'Agroscope ZA-BH / AGRIDEA' },
+  // Spezialkulturen
+  { enterprise_type: 'Reben', margin_chf: 15000, yield_unit: 'CHF/ha', notes: 'Durchschnitt CH, Keltertrauben, hohe regionale Schwankungen (VS, VD, GE, ZH)', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Obstbau Niederstamm', margin_chf: 12000, yield_unit: 'CHF/ha', notes: 'Aepfel, Tafelqualitaet, integrierte Produktion', source: 'Agroscope ZA-BH / AGRIDEA' },
+  { enterprise_type: 'Freilandgemuese', margin_chf: 10000, yield_unit: 'CHF/ha', notes: 'Durchschnitt, stark kulturabhaengig (Salat, Karotten, Zwiebeln)', source: 'Agroscope ZA-BH / AGRIDEA' },
 ];
 
-// ---------------------------------------------------------------------------
-// 6. Insert data
-// ---------------------------------------------------------------------------
-
-console.log('Inserting crops...');
-const insertCrop = db.instance.prepare(
-  'INSERT OR REPLACE INTO crops (id, name, crop_group, typical_yield_t_ha, nutrient_offtake_n, nutrient_offtake_p2o5, nutrient_offtake_k2o, growth_stages, altitude_zone, jurisdiction) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
+const insertGm = db.instance.prepare(
+  'INSERT INTO gross_margins (enterprise_type, margin_chf, yield_unit, notes, source, jurisdiction) VALUES (?, ?, ?, ?, ?, ?)'
 );
-for (const c of crops) {
-  insertCrop.run(c.id, c.name, c.crop_group, c.typical_yield_t_ha, c.nutrient_offtake_n, c.nutrient_offtake_p2o5, c.nutrient_offtake_k2o, JSON.stringify(c.growth_stages), c.altitude_zone, 'CH');
+for (const gm of grossMargins) {
+  insertGm.run(gm.enterprise_type, gm.margin_chf, gm.yield_unit, gm.notes, gm.source, 'CH');
 }
-console.log(`  ${crops.length} crops inserted`);
-
-console.log('Inserting soil types...');
-const insertSoil = db.instance.prepare(
-  'INSERT OR REPLACE INTO soil_types (id, name, soil_group, texture, drainage_class, ph_class, description) VALUES (?, ?, ?, ?, ?, ?, ?)'
-);
-for (const s of soilTypes) {
-  insertSoil.run(s.id, s.name, s.soil_group, s.texture, s.drainage_class, s.ph_class, s.description);
-}
-console.log(`  ${soilTypes.length} soil types inserted`);
-
-console.log('Inserting nutrient recommendations...');
-const insertRec = db.instance.prepare(
-  'INSERT OR REPLACE INTO nutrient_recommendations (crop_id, soil_group, altitude_zone, previous_crop_group, n_rec_kg_ha, p_rec_kg_ha, k_rec_kg_ha, mg_rec_kg_ha, notes, grud_section, jurisdiction) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)'
-);
-for (const r of nutrientRecs) {
-  insertRec.run(r.crop_id, r.soil_group, r.altitude_zone, r.previous_crop_group, r.n_rec_kg_ha, r.p_rec_kg_ha, r.k_rec_kg_ha, r.mg_rec_kg_ha, r.notes, r.grud_section, 'CH');
-}
-console.log(`  ${nutrientRecs.length} nutrient recommendations inserted`);
-
-console.log('Inserting manure values...');
-const insertManure = db.instance.prepare(
-  'INSERT OR REPLACE INTO manure_values (animal_category, housing_system, n_per_gve, p2o5_per_gve, k2o_per_gve, nh3_loss_pct, notes, jurisdiction) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
-);
-for (const m of manureValues) {
-  insertManure.run(m.animal_category, m.housing_system, m.n_per_gve, m.p2o5_per_gve, m.k2o_per_gve, m.nh3_loss_pct, m.notes, 'CH');
-}
-console.log(`  ${manureValues.length} manure values inserted`);
-
-console.log('Inserting commodity prices...');
-const insertPrice = db.instance.prepare(
-  'INSERT OR REPLACE INTO commodity_prices (crop_id, market, price_per_tonne, currency, price_source, published_date, retrieved_at, source, jurisdiction) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
-);
-for (const p of prices) {
-  insertPrice.run(p.crop_id, p.market, p.price_per_tonne, 'CHF', p.price_source, p.published_date, now, p.source, 'CH');
-}
-console.log(`  ${prices.length} prices inserted`);
+console.log(`Inserted ${grossMargins.length} gross margins`);
 
 // ---------------------------------------------------------------------------
-// 7. Build FTS5 index
+// 6. Financial Guidance — Advisory content on farm economics
 // ---------------------------------------------------------------------------
 
-console.log('Building FTS5 search index...');
-db.instance.exec('DELETE FROM search_index');
-
-// Index crops
-for (const c of crops) {
-  db.instance.prepare(
-    'INSERT INTO search_index (title, body, crop_group, jurisdiction) VALUES (?, ?, ?, ?)'
-  ).run(
-    c.name,
-    `${c.name} ${c.crop_group} Ertrag ${c.typical_yield_t_ha} t/ha N-Entzug ${c.nutrient_offtake_n} kg/ha P2O5 ${c.nutrient_offtake_p2o5} K2O ${c.nutrient_offtake_k2o} ${c.growth_stages.join(' ')} ${c.altitude_zone}`,
-    c.crop_group,
-    'CH'
-  );
+interface FinancialGuidanceEntry {
+  topic: string;
+  content: string;
+  source: string;
 }
 
-// Index soil types
-for (const s of soilTypes) {
-  db.instance.prepare(
-    'INSERT INTO search_index (title, body, crop_group, jurisdiction) VALUES (?, ?, ?, ?)'
-  ).run(
-    s.name,
-    `${s.name} Bodengruppe ${s.soil_group} Textur ${s.texture} Drainage ${s.drainage_class} pH-Klasse ${s.ph_class} ${s.description}`,
-    'boden',
-    'CH'
-  );
-}
-
-// Index nutrient recs
-for (const r of nutrientRecs) {
-  const crop = crops.find(c => c.id === r.crop_id);
-  db.instance.prepare(
-    'INSERT INTO search_index (title, body, crop_group, jurisdiction) VALUES (?, ?, ?, ?)'
-  ).run(
-    `GRUD Empfehlung ${crop?.name ?? r.crop_id}`,
-    `${crop?.name ?? r.crop_id} Bodengruppe ${r.soil_group} ${r.altitude_zone} N ${r.n_rec_kg_ha} P ${r.p_rec_kg_ha} K ${r.k_rec_kg_ha} Mg ${r.mg_rec_kg_ha} ${r.notes}`,
-    crop?.crop_group ?? 'empfehlung',
-    'CH'
-  );
-}
-
-// Index manure values
-for (const m of manureValues) {
-  db.instance.prepare(
-    'INSERT INTO search_index (title, body, crop_group, jurisdiction) VALUES (?, ?, ?, ?)'
-  ).run(
-    `Hofduenger ${m.animal_category} ${m.housing_system}`,
-    `${m.animal_category} ${m.housing_system} N ${m.n_per_gve} P2O5 ${m.p2o5_per_gve} K2O ${m.k2o_per_gve} NH3-Verlust ${m.nh3_loss_pct}% ${m.notes}`,
-    'hofduenger',
-    'CH'
-  );
-}
-
-console.log('FTS5 index built');
-
-// ---------------------------------------------------------------------------
-// 8. Update metadata
-// ---------------------------------------------------------------------------
-
-db.instance.prepare('INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)').run('last_ingest', now);
-db.instance.prepare('INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)').run('build_date', now);
-console.log(`Metadata updated: last_ingest=${now}`);
-
-// ---------------------------------------------------------------------------
-// 9. Write coverage.json
-// ---------------------------------------------------------------------------
-
-const coverage = {
-  server: 'ch-crop-nutrients-mcp',
-  jurisdiction: 'CH',
-  version: '0.1.0',
-  last_ingest: now,
-  data: {
-    crops: crops.length,
-    soil_types: soilTypes.length,
-    nutrient_recommendations: nutrientRecs.length,
-    manure_values: manureValues.length,
-    commodity_prices: prices.length,
+const financialGuidance: FinancialGuidanceEntry[] = [
+  {
+    topic: 'AHV/IV/EO Beitraege Selbstaendige',
+    content: 'Selbstaendige Landwirte zahlen AHV/IV/EO-Beitraege auf dem Nettoeinkommen aus selbstaendiger Erwerbstaetigkeit. ' +
+      'Beitragssatz: 10.6% (AHV 8.7%, IV 1.4%, EO 0.5%) auf Einkommen ab 60,500 CHF. Sinkende Skala fuer tiefere ' +
+      'Einkommen (Minimum 5.371% auf 10,100 CHF). Bei Einkommen unter 2,500 CHF: Mindestbeitrag 514 CHF/Jahr. ' +
+      'Beitraege werden auf Basis der definitiven Steuerveranlagung berechnet (Nachbelastung moeglich). ' +
+      'Fruehzeitige Schaetzung empfohlen, um Liquiditaetsengpaesse zu vermeiden.',
+    source: 'AHVG, AHVV, AHV-Beitragsrechner BSV',
   },
-  tools: 11,
-  sources: ['GRUD 2017 (Agroscope)', 'Suisse-Bilanz Wegleitung (BLW)', 'AGRIDEA', 'SBV/swiss granum'],
-};
+  {
+    topic: 'Familienzulagen Landwirtschaft (FLG)',
+    content: 'Familienzulagen fuer selbstaendige Landwirte (Bundesgesetz ueber die Familienzulagen in der Landwirtschaft, FLG): ' +
+      'Kinderzulage 200 CHF/Monat pro Kind (bis 16 Jahre, bis 25 in Ausbildung). Ausbildungszulage 250 CHF/Monat (ab 16 Jahre). ' +
+      'Haushaltungszulage 100 CHF/Monat im Berggebiet (BZ I-IV + Soemmerungsgebiet). ' +
+      'Anspruchsberechtigung: Selbstaendiger Landwirt mit mindestens 50% landw. Einkommen oder 0.5 SAK. ' +
+      'Antrag bei der kantonalen AHV-Ausgleichskasse. Bei Erwerbsunfaehigkeit: Betriebshilfe (FLG Art. 10) — ' +
+      'Beitraege an Ersatzarbeitskraft bei Krankheit, Unfall, Militaerdienst, Mutterschaft.',
+    source: 'FLG (SR 836.1), FLV (SR 836.11)',
+  },
+  {
+    topic: 'Maschinenkosten',
+    content: 'Agroscope veroeffentlicht jaehrlich den Maschinenkostenbericht mit Richtwerten: ' +
+      'Traktor 80 PS: ~42 CHF/h (bei 500 h/Jahr), Maehdrescher 250 PS: ~220 CHF/h, Ladewagen: ~18 CHF/h, ' +
+      'Pflug 3-Schar: ~28 CHF/h, Kreiselegge 3m: ~32 CHF/h, Saetkombination: ~48 CHF/h. ' +
+      'Kosten sinken bei hoeherer Auslastung. Ueberbetrieblicher Einsatz (Maschinenring, Nachbar): ' +
+      'Entschaedigung gemaess Agroscope-Ansaetzen. Eigenmechanisierung lohnt sich ab ca. 200 ha offene Ackerflaeche ' +
+      'fuer einen Maehdrescher, sonst Lohnunternehmer guenstiger.',
+    source: 'Agroscope Maschinenkostenbericht (jaehrlich)',
+  },
+  {
+    topic: 'Arbeitswirtschaft',
+    content: 'Richtwerte fuer den Arbeitsbedarf pro Kultur und Tierart (Agroscope/AGRIDEA): ' +
+      'Winterweizen: ~12 AKh/ha, Kartoffeln: ~90 AKh/ha, Milchkuh: ~55 AKh/Kuh/Jahr (Laufstall), ' +
+      'Mastschwein: ~2.5 AKh/Platz/Jahr, Legehenne: ~0.3 AKh/Platz/Jahr, Reben: ~800 AKh/ha. ' +
+      'Eine Standardarbeitskraft (SAK) entspricht ca. 2,800 AKh/Jahr (= 1.0 SAK). ' +
+      'Wichtig fuer Betriebsplanung: SAK-Berechnung bestimmt BGBB-Status, DZ-Berechtigung und Arbeitskraeftebedarf.',
+    source: 'Agroscope ART, AGRIDEA Betriebsplanung',
+  },
+  {
+    topic: 'Versicherungen Landwirtschaft',
+    content: 'Wichtige Versicherungen fuer Schweizer Landwirtschaftsbetriebe: ' +
+      '1. Schweizer Hagel: Hagelversicherung (50-80% des Erntewerts), Elementarschaeden (Frost, Ueberschwemmung). ' +
+      '2. Tierversicherung: Tod/Notschlachtung von Nutztieren (kantonal unterschiedlich, Tierseuchenkasse). ' +
+      '3. Betriebsunterbrechung: Deckung entgangener Ertrag bei laengerer Arbeitsunfaehigkeit. ' +
+      '4. Berufshaftpflicht: Schutz bei Schaden durch landwirtschaftliche Taetigkeit. ' +
+      '5. Gebaeude: Kantonale Gebaeude- und Feuerversicherung (obligatorisch in den meisten Kantonen). ' +
+      '6. Unfallversicherung: Obligatorisch fuer Angestellte (Suva/Privatversicherer), freiwillig fuer Betriebsleiter.',
+    source: 'Schweizer Hagel, SBV, kantonale Gebaeudeversicherungen',
+  },
+  {
+    topic: 'Buchhaltung und Kennzahlen',
+    content: 'Landwirtschaftliche Buchhaltung (FAT/Agroscope-System): Das landwirtschaftliche Einkommen umfasst ' +
+      'Rohleistung minus Sachaufwand minus Abschreibungen minus Schuldzinsen. Wichtige Kennzahlen aus der ZA-BH: ' +
+      'Medianes landwirtschaftliches Einkommen (Talregion): ~65,000 CHF/Betrieb (2024). ' +
+      'Gesamteinkommen (inkl. ausserlandwirtschaftlich): ~95,000 CHF. ' +
+      'Eigenkapitalbildung: ~10,000-15,000 CHF/Jahr. Fremdkapitalanteil: ~40-50% des Aktivkapitals. ' +
+      'Cash Flow: Einkommen + Abschreibungen - Privatverbrauch - Steuern. Sollte > 0 fuer Betriebsentwicklung sein.',
+    source: 'Agroscope ZA-BH, Agrarbericht BLW',
+  },
+  {
+    topic: 'Betriebsuebergabe Finanzierung',
+    content: 'Finanzierung der Betriebsuebergabe: Ertragswert des Betriebs typischerweise 300,000-800,000 CHF ' +
+      '(je nach Groesse, Lage, Gebaeude). Finanzierung durch: Eigenkapital (Ersparnisse, Erbvorbezug), ' +
+      'Hypothek (landwirtschaftliche Kreditkassen, max. Belehnung ~80% des Ertragswerts), ' +
+      'Investitionskredit (zinslos, BLW/Kanton, bis 20 Jahre Laufzeit, bedarfsgeprueft). ' +
+      'Tragbarkeit: Jaehrliche Gesamtbelastung (Zinsen + Amortisation + Pachtzins) sollte max. 30-35% ' +
+      'des Gesamteinkommens betragen. Starthilfe Junglandwirte: einmaliger Beitrag max. 100,000 CHF ' +
+      '(Erstuebernahme, Ausbildung EFZ + hoeherer Abschluss, Alter < 35).',
+    source: 'BLW SVV, AGRIDEA Betriebsuebergabe, kantonale Landwirtschaftsaemter',
+  },
+  {
+    topic: 'Lohnrichtlinien Landwirtschaft',
+    content: 'SBV-Lohnrichtlinien fuer landwirtschaftliche Arbeitnehmer (2025): ' +
+      'Qualifizierter Landwirt (EFZ): 3,850-4,400 CHF/Monat brutto (13. Monatslohn). ' +
+      'Betriebsleiter (Meisterabschluss): 4,500-5,500 CHF/Monat. ' +
+      'Hilfskraft (ohne Ausbildung): 3,200-3,600 CHF/Monat. ' +
+      'Saisonarbeitskraft: 3,000-3,400 CHF/Monat. ' +
+      'Naturallohn: Kost und Logis werden angerechnet (ca. 990 CHF/Monat fuer Vollpension + Zimmer). ' +
+      'Arbeitszeit: 55 h/Woche Maximum (ArG gilt nicht fuer Landwirtschaft, aber NAV/GAV regeln). ' +
+      'Ferien: 4 Wochen (5 Wochen ab 50 Jahre, 5 Wochen bis 20 Jahre).',
+    source: 'SBV Lohnrichtlinien, kantonale Normalarbeitsvertraege (NAV)',
+  },
+  {
+    topic: 'Betriebstypologie Schweiz',
+    content: 'Betriebstypen nach BLW-Klassifikation: ' +
+      'Ackerbau: > 50% Rohleistung aus Pflanzenbau, Schwerpunkt Getreide/Hackfruechte. ' +
+      'Milchwirtschaft: > 50% Rohleistung aus Milchproduktion. Groesster Betriebstyp der Schweiz (~20,000 Betriebe). ' +
+      'Mutterkuhhaltung: Fleischproduktion ohne Milchlieferung. Wachsend, v.a. Huegelzone/Berggebiet. ' +
+      'Kombinierter Rindviehbetrieb: Milch und Fleisch. ' +
+      'Schweinehaltung: > 50% aus Schweinezucht/-mast. Konzentration in Talzone (Mittelland). ' +
+      'Spezialkulturen: Rebbau, Obstbau, Gemuese. Hohe Wertschoepfung/ha, arbeitsintensiv. ' +
+      'Diversifiziert: kein Zweig > 50%. Agrotourismus, Direktvermarktung, Lohnarbeit.',
+    source: 'BLW Agrarbericht, Agroscope Betriebstypologie',
+  },
+  {
+    topic: 'Investitionskredite und Starthilfe',
+    content: 'Bundesfoerderung gemaess Strukturverbesserungsverordnung (SVV): ' +
+      'Investitionskredite: Zinslose Darlehen fuer Bau/Umbau von Oekonomiegebaeuden, Wohnhaus, ' +
+      'Alpgebaeuden, Diversifikationsmassnahmen. Laufzeit bis 20 Jahre. Rueckzahlung in gleichen ' +
+      'jaehrlichen Raten. Bedingung: Tragbarkeit nachgewiesen, Betrieb viabel (>= 1.0 SAK). ' +
+      'Starthilfe Junglandwirte: Einmaliger Beitrag max. 100,000 CHF bei Erstuebernahme eines ' +
+      'landwirtschaftlichen Gewerbes. Bedingung: Alter < 35, EFZ Landwirt + hoeherer Abschluss ' +
+      '(Betriebsleiter, Meisterlandwirt, FH/Uni). Kann mit Investitionskredit kombiniert werden.',
+    source: 'BLW SVV (SR 913.1), kantonale Landwirtschaftsaemter',
+  },
+  {
+    topic: 'Vorsorge und Altersicherung',
+    content: 'Vorsorge fuer selbstaendige Landwirte: ' +
+      '1. Saeule (AHV): Obligatorisch, Beitraege 10.6%. Altersrente ab 65 (Frauen 64): max. 2,450 CHF/Monat (2025). ' +
+      '2. Saeule (BVG): Nicht obligatorisch fuer Selbstaendige. Freiwilliger Anschluss an Vorsorgestiftung moeglich ' +
+      '(z.B. Stiftung Auffangeinrichtung, Agrisano). Empfohlen wegen Vorsorgeluecke. ' +
+      '3. Saeule (3a): Max. 35,280 CHF/Jahr (2025) fuer Selbstaendige ohne 2. Saeule (7,056 CHF mit 2. Saeule). ' +
+      'Steuerlich abzugsfaehig. Auszahlung bei Pensionierung, Selbstaendigkeit, Auswanderung, Eigenheim. ' +
+      'Landwirtschaftsspezifisch: Betrieb als Altersvorsorge (Ertragswert vs. Verkehrswert). Bei Hofuebergabe ' +
+      'zum Ertragswert entsteht eine Vorsorgeluecke — daher 2. und 3. Saeule wichtig.',
+    source: 'AHVG, BVG, Agrisano, kantonale AHV-Ausgleichskassen',
+  },
+];
 
-writeFileSync('data/coverage.json', JSON.stringify(coverage, null, 2));
-console.log('Coverage written to data/coverage.json');
+const insertFg = db.instance.prepare(
+  'INSERT INTO financial_guidance (topic, content, source, jurisdiction) VALUES (?, ?, ?, ?)'
+);
+for (const fg of financialGuidance) {
+  insertFg.run(fg.topic, fg.content, fg.source, 'CH');
+}
+console.log(`Inserted ${financialGuidance.length} financial guidance entries`);
 
 // ---------------------------------------------------------------------------
-// 10. Write sources.yml
+// 7. FTS5 Search Index — All content across all tables
 // ---------------------------------------------------------------------------
 
-const sourcesYml = `# Data sources for ch-crop-nutrients-mcp
-sources:
-  - name: GRUD 2017
-    authority: Agroscope
-    url: https://www.agroscope.admin.ch/agroscope/de/home/themen/pflanzenbau/duengung.html
-    license: Swiss Federal Administration — free reuse
-    update_frequency: periodic (major revision ~10 years)
-    last_retrieved: "${now}"
+const insertFts = db.instance.prepare(
+  'INSERT INTO search_index (title, body, topic, jurisdiction) VALUES (?, ?, ?, ?)'
+);
 
-  - name: Suisse-Bilanz Wegleitung
-    authority: Bundesamt fuer Landwirtschaft (BLW)
-    url: https://www.blw.admin.ch/blw/de/home/instrumente/direktzahlungen/oekologischer-leistungsnachweis.html
-    license: Swiss Federal Administration — free reuse
-    update_frequency: annual (with DZV updates)
-    last_retrieved: "${now}"
+// SAK factors
+for (const s of sakFactors) {
+  insertFts.run(
+    `SAK-Faktor: ${s.enterprise_type}`,
+    `SAK-Faktor ${s.factor_per_unit} ${s.unit} fuer ${s.enterprise_type}. ${s.notes}. Schwellenwert 1.0 SAK fuer landwirtschaftliches Gewerbe (BGBB Art. 5).`,
+    'sak',
+    'CH'
+  );
+}
 
-  - name: swiss granum Richtpreise
-    authority: swiss granum / SBV
-    url: https://www.swissgranum.ch/richtpreise
-    license: Public price information
-    update_frequency: annual (harvest season)
-    last_retrieved: "${now}"
+// Business structures
+for (const bs of businessStructures) {
+  insertFts.run(
+    `Rechtsform: ${bs.structure_type}`,
+    `${bs.description} Steuerliche Behandlung: ${bs.tax_treatment}`,
+    'rechtsform',
+    'CH'
+  );
+}
 
-  - name: swisspatat Richtpreise
-    authority: swisspatat
-    url: https://www.swisspatat.ch
-    license: Public price information
-    update_frequency: seasonal
-    last_retrieved: "${now}"
-`;
+// Tax rules
+for (const t of taxRules) {
+  insertFts.run(
+    `Steuern: ${t.topic}`,
+    `${t.rule}. ${t.description} Rechtsgrundlage: ${t.legal_basis}.`,
+    'steuern',
+    'CH'
+  );
+}
 
-writeFileSync('data/sources.yml', sourcesYml);
-console.log('Sources written to data/sources.yml');
+// Succession scenarios
+for (const s of successionScenarios) {
+  insertFts.run(
+    `Betriebsuebergabe: ${s.scenario}`,
+    `${s.description} Ertragswert: ${s.ertragswert_rule} Steuerfolgen: ${s.tax_implications}`,
+    'uebergabe',
+    'CH'
+  );
+}
+
+// Gross margins
+for (const gm of grossMargins) {
+  insertFts.run(
+    `Deckungsbeitrag: ${gm.enterprise_type}`,
+    `Deckungsbeitrag ${gm.margin_chf} ${gm.yield_unit} fuer ${gm.enterprise_type}. ${gm.notes}. Quelle: ${gm.source}.`,
+    'deckungsbeitrag',
+    'CH'
+  );
+}
+
+// Financial guidance
+for (const fg of financialGuidance) {
+  insertFts.run(
+    fg.topic,
+    fg.content,
+    'finanzberatung',
+    'CH'
+  );
+}
+
+console.log('Built FTS5 search index');
+
+// ---------------------------------------------------------------------------
+// 8. Metadata
+// ---------------------------------------------------------------------------
+
+db.run('INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)', ['last_ingest', now]);
+db.run('INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)', ['build_date', now]);
+db.run('INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)', ['schema_version', '1.0']);
+db.run('INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)', ['mcp_name', 'Switzerland Farm Planning MCP']);
+db.run('INSERT OR REPLACE INTO db_metadata (key, value) VALUES (?, ?)', ['jurisdiction', 'CH']);
 
 db.close();
-console.log('\\nIngestion complete.');
+
+console.log(`\nIngestion complete (${now})`);
+console.log(`  SAK factors:            ${sakFactors.length}`);
+console.log(`  Business structures:    ${businessStructures.length}`);
+console.log(`  Tax rules:              ${taxRules.length}`);
+console.log(`  Succession scenarios:   ${successionScenarios.length}`);
+console.log(`  Gross margins:          ${grossMargins.length}`);
+console.log(`  Financial guidance:     ${financialGuidance.length}`);
+console.log(`  FTS index entries:      ${sakFactors.length + businessStructures.length + taxRules.length + successionScenarios.length + grossMargins.length + financialGuidance.length}`);

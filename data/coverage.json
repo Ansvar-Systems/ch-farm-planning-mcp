@@ -1,20 +1,22 @@
 {
-  "server": "ch-crop-nutrients-mcp",
+  "server": "ch-farm-planning-mcp",
   "jurisdiction": "CH",
   "version": "0.1.0",
   "last_ingest": "2026-04-05",
   "data": {
-    "crops": 18,
-    "soil_types": 10,
-    "nutrient_recommendations": 15,
-    "manure_values": 11,
-    "commodity_prices": 12
+    "sak_factors": 30,
+    "business_structures": 5,
+    "tax_rules": 10,
+    "succession_scenarios": 6,
+    "gross_margins": 26,
+    "financial_guidance": 11
   },
-  "tools": 11,
+  "tools": 10,
   "sources": [
-    "GRUD 2017 (Agroscope)",
-    "Suisse-Bilanz Wegleitung (BLW)",
-    "AGRIDEA",
-    "SBV/swiss granum"
+    "Agroscope ZA-BH",
+    "BLW SAK-Faktoren (DZV)",
+    "BGBB (SR 211.412.11)",
+    "AGRIDEA Deckungsbeitraege",
+    "SBV Kennzahlen"
   ]
 }
