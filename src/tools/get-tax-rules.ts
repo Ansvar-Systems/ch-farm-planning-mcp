@@ -1,4 +1,5 @@
 import { buildMeta } from '../metadata.js';
+import { buildCitation } from '../citation.js';
 import { validateJurisdiction } from '../jurisdiction.js';
 import type { Database } from '../db.js';
 
@@ -32,6 +33,12 @@ export function handleGetTaxRules(db: Database, args: Args) {
       jurisdiction: jv.jurisdiction,
       results_count: rows.length,
       results: rows,
+      _citation: buildCitation(
+      `CH Tax: ${args.topic}`,
+      `Steuerregeln ${args.topic}`,
+      'get_tax_rules',
+      { topic: args.topic ?? '' },
+    ),
       _meta: buildMeta(),
     };
   }
