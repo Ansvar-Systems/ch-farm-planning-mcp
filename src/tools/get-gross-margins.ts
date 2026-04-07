@@ -1,4 +1,5 @@
 import { buildMeta } from '../metadata.js';
+import { buildCitation } from '../citation.js';
 import { validateJurisdiction } from '../jurisdiction.js';
 import type { Database } from '../db.js';
 
@@ -31,6 +32,12 @@ export function handleGetGrossMargins(db: Database, args: Args) {
     jurisdiction: jv.jurisdiction,
     results_count: rows.length,
     results: rows,
+    _citation: buildCitation(
+      `CH Gross Margins: ${args.enterprise_type}`,
+      `Deckungsbeiträge ${args.enterprise_type}`,
+      'get_gross_margins',
+      { enterprise_type: args.enterprise_type },
+    ),
     _meta: buildMeta({
       source_url: 'https://www.agroscope.admin.ch/agroscope/de/home/themen/wirtschaft-technik/betriebswirtschaft/deckungsbeitraege.html',
     }),

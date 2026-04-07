@@ -1,4 +1,5 @@
 import { buildMeta } from '../metadata.js';
+import { buildCitation } from '../citation.js';
 import { validateJurisdiction } from '../jurisdiction.js';
 import type { Database } from '../db.js';
 
@@ -32,6 +33,12 @@ export function handleGetSuccessionPlanning(db: Database, args: Args) {
       jurisdiction: jv.jurisdiction,
       results_count: rows.length,
       results: rows,
+      _citation: buildCitation(
+      `CH Succession: ${args.scenario}`,
+      `Hofübergabe ${args.scenario}`,
+      'get_succession_planning',
+      { scenario: args.scenario ?? '' },
+    ),
       _meta: buildMeta(),
     };
   }

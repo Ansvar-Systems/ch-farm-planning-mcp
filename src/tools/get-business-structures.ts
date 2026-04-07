@@ -1,4 +1,5 @@
 import { buildMeta } from '../metadata.js';
+import { buildCitation } from '../citation.js';
 import { validateJurisdiction } from '../jurisdiction.js';
 import type { Database } from '../db.js';
 
@@ -32,6 +33,12 @@ export function handleGetBusinessStructures(db: Database, args: Args) {
       jurisdiction: jv.jurisdiction,
       results_count: rows.length,
       results: rows,
+      _citation: buildCitation(
+      `CH Business Structure: ${args.structure_type}`,
+      `Betriebsform ${args.structure_type}`,
+      'get_business_structures',
+      { structure_type: args.structure_type ?? '' },
+    ),
       _meta: buildMeta(),
     };
   }

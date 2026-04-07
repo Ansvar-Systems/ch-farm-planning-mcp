@@ -1,4 +1,5 @@
 import { buildMeta } from '../metadata.js';
+import { buildCitation } from '../citation.js';
 import { validateJurisdiction } from '../jurisdiction.js';
 import type { Database } from '../db.js';
 
@@ -34,6 +35,12 @@ export function handleGetSakCalculation(db: Database, args: Args) {
       sak_threshold_note: 'Mindestens 1.0 SAK fuer landwirtschaftliches Gewerbe (BGBB Art. 5)',
       results_count: rows.length,
       results: rows,
+      _citation: buildCitation(
+      `CH SAK: ${args.enterprise_type}`,
+      `SAK-Faktoren ${args.enterprise_type}`,
+      'get_sak_calculation',
+      { enterprise_type: args.enterprise_type ?? '' },
+    ),
       _meta: buildMeta(),
     };
   }
